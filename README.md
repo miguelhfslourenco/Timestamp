@@ -1,2 +1,2 @@
-# RepoTest
-Test repository
+# Timestamp
+Timestamp repository
