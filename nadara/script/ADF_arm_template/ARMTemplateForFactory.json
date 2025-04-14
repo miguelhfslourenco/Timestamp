@@ -1,0 +1,3441 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "type": "string",
+            "metadata": "Data Factory name",
+            "defaultValue": "df-dataplatform-nadara-dev"
+        },
+        "AzureBlobStorage1_connectionString": {
+            "type": "secureString",
+            "metadata": "Secure string for 'connectionString' of 'AzureBlobStorage1'"
+        },
+        "Nadara_Snowflake_Dev_password": {
+            "type": "secureString",
+            "metadata": "Secure string for 'password' of 'Nadara_Snowflake_Dev'"
+        },
+        "ls_sadataplatfnadara_accountKey": {
+            "type": "secureString",
+            "metadata": "Secure string for 'accountKey' of 'ls_sadataplatfnadara'"
+        },
+        "Nadara_Snowflake_Dev_properties_typeProperties_database": {
+            "type": "string",
+            "defaultValue": "DP_DEV"
+        },
+        "df-ls-keyvault_properties_typeProperties_baseUrl": {
+            "type": "string",
+            "defaultValue": "https://kv-nadara-dev.vault.azure.net/"
+        },
+        "ls_blobstorage_sasUri": {
+            "type": "secureString",
+            "metadata": "Secure string for 'sasUri' of 'ls_blobstorage'"
+        },
+        "ls_dev_postgresql_properties_typeProperties_server": {
+            "type": "string",
+            "defaultValue": "10.100.22.182"
+        },
+        "ls_dev_postgresql_properties_typeProperties_database": {
+            "type": "string",
+            "defaultValue": "hub"
+        },
+        "ls_dev_postgresql_properties_typeProperties_username": {
+            "type": "string",
+            "defaultValue": "timestamp_reader"
+        },
+        "ls_sadataplatfnadara_properties_typeProperties_url": {
+            "type": "string",
+            "defaultValue": "https://sadataplatfnadara.dfs.core.windows.net/"
+        },
+        "ls_snowflake_dev_properties_typeProperties_database": {
+            "type": "string",
+            "defaultValue": "DP_DEV"
+        },
+        "ls_snowflake_dev_properties_typeProperties_role": {
+            "type": "string",
+            "defaultValue": "DP_DEV_ELT_ROLE"
+        },
+        "trg_satellite_vegetation_landing_properties_typeProperties_scope": {
+            "type": "string",
+            "defaultValue": "/subscriptions/86093bd5-474b-461b-ac98-eab43df6459b/resourceGroups/rg-dataplatform_extra/providers/Microsoft.Storage/storageAccounts/sadataplatfnadara"
+        },
+        "default_properties_environment_value": {
+            "type": "string",
+            "defaultValue": "dev"
+        }
+    },
+    "variables": {
+        "factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+    },
+    "resources": [
+        {
+            "name": "[concat(parameters('factoryName'), '/full_history_load')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "ForEachTable",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "SetTablesToCopy",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@variables('tablesToCopy')",
+                                "type": "Expression"
+                            },
+                            "isSequential": false,
+                            "batchCount": 5,
+                            "activities": [
+                                {
+                                    "name": "ExecuteTableIngestion",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "ingest_full_history",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": false,
+                                        "parameters": {
+                                            "TableToCopy": {
+                                                "value": "@item()",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "GetTablesToCopy",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_sadataplatfnadara_json_scada1",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": "tablesToCopy.json"
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "SetTablesToCopy",
+                        "type": "SetVariable",
+                        "dependsOn": [
+                            {
+                                "activity": "GetTablesToCopy",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "tablesToCopy",
+                            "value": {
+                                "value": "@if(\n    empty(pipeline().parameters.TablesToCopy),\n    activity('GetTablesToCopy').output.value[0].tablesToCopy,\n    pipeline().parameters.TablesToCopy\n)",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "TablesToCopy": {
+                        "type": "array",
+                        "defaultValue": [
+                            "data_lake.inverter_data"
+                        ]
+                    }
+                },
+                "variables": {
+                    "tablesToCopy": {
+                        "type": "Array"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-07T16:58:25Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_json_scada1')]",
+                "[concat(variables('factoryId'), '/pipelines/ingest_full_history')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/incremental_load')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "ForEachTable",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "SetTablesToCopy",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@variables('tablesToCopy')",
+                                "type": "Expression"
+                            },
+                            "activities": [
+                                {
+                                    "name": "ExecuteIngestIncrementalData",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "ingest_incremental_data",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": true,
+                                        "parameters": {
+                                            "TableToCopy": {
+                                                "value": "@item()",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "GetTablesToCopy",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_sadataplatfnadara_json_scada2",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": "tablesToCopy.json"
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "SetTablesToCopy",
+                        "type": "SetVariable",
+                        "dependsOn": [
+                            {
+                                "activity": "GetTablesToCopy",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "tablesToCopy",
+                            "value": {
+                                "value": "@if(\n    empty(pipeline().parameters.TablesToCopy),\n    activity('GetTablesToCopy').output.value[0].tablesToCopy,\n    pipeline().parameters.TablesToCopy\n)",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "TablesToCopy": {
+                        "type": "array",
+                        "defaultValue": [
+                            "data_lake.asset_config"
+                        ]
+                    }
+                },
+                "variables": {
+                    "tablesToCopy": {
+                        "type": "Array"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-04T14:02:08Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_json_scada2')]",
+                "[concat(variables('factoryId'), '/pipelines/ingest_incremental_data')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ingest_full_history')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "ForEachYear",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "GetYear",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            },
+                            {
+                                "activity": "SetCurrentTimestamp",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('GetYear').output.value",
+                                "type": "Expression"
+                            },
+                            "isSequential": true,
+                            "activities": [
+                                {
+                                    "name": "GetData",
+                                    "type": "Copy",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "SetFileName",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "policy": {
+                                        "timeout": "1.00:00:00",
+                                        "retry": 0,
+                                        "retryIntervalInSeconds": 30,
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "source": {
+                                            "type": "PostgreSqlV2Source",
+                                            "query": {
+                                                "value": "@concat('select * from ', pipeline().parameters.TableToCopy, ' where extract( YEAR from updated_at) = ''', variables('year'), ''' ')",
+                                                "type": "Expression"
+                                            }
+                                        },
+                                        "sink": {
+                                            "type": "ParquetSink",
+                                            "storeSettings": {
+                                                "type": "AzureBlobFSWriteSettings"
+                                            },
+                                            "formatSettings": {
+                                                "type": "ParquetWriteSettings"
+                                            }
+                                        },
+                                        "enableStaging": false,
+                                        "translator": {
+                                            "type": "TabularTranslator",
+                                            "typeConversion": true,
+                                            "typeConversionSettings": {
+                                                "allowDataTruncation": true,
+                                                "treatBooleanAsNumber": false
+                                            }
+                                        }
+                                    },
+                                    "inputs": [
+                                        {
+                                            "referenceName": "ds_postgresql_scada1",
+                                            "type": "DatasetReference",
+                                            "parameters": {
+                                                "schema": {
+                                                    "value": "@split(pipeline().parameters.TableToCopy, '.')[0]",
+                                                    "type": "Expression"
+                                                },
+                                                "tableName": {
+                                                    "value": "@split(pipeline().parameters.TableToCopy, '.')[1]",
+                                                    "type": "Expression"
+                                                }
+                                            }
+                                        }
+                                    ],
+                                    "outputs": [
+                                        {
+                                            "referenceName": "ds_sadataplatfnadara_parquet_scada1",
+                                            "type": "DatasetReference",
+                                            "parameters": {
+                                                "env": "dev",
+                                                "tableName": {
+                                                    "value": "@split(pipeline().parameters.TableToCopy, '.')[1]",
+                                                    "type": "Expression"
+                                                },
+                                                "fileName": {
+                                                    "value": "@variables('fileName')",
+                                                    "type": "Expression"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    "name": "SetYear",
+                                    "type": "SetVariable",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "variableName": "year",
+                                        "value": {
+                                            "value": "@string(item().extract)",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "AppendFileName",
+                                    "type": "AppendVariable",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "GetData",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "variableName": "fileNames",
+                                        "value": {
+                                            "value": "@variables('fileName')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "SetFileName",
+                                    "type": "SetVariable",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "SetYear",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "policy": {
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "variableName": "fileName",
+                                        "value": {
+                                            "value": "@concat('year=', variables('year'), '/data-', formatDateTime(utcnow(), 'yyyyMMddHHmmss'), '.parquet')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "GetYear",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "PostgreSqlV2Source",
+                                "query": {
+                                    "value": "@concat(\n  'SELECT DISTINCT EXTRACT(YEAR FROM updated_at) FROM ', \n  pipeline().parameters.TableToCopy)",
+                                    "type": "Expression"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_postgresql_scada1",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "schema": {
+                                        "value": "@split(pipeline().parameters.TableToCopy, '.')[0]",
+                                        "type": "Expression"
+                                    },
+                                    "tableName": {
+                                        "value": "@split(pipeline().parameters.TableToCopy, '.')[1]",
+                                        "type": "Expression"
+                                    }
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "SetWatermark",
+                        "type": "Copy",
+                        "dependsOn": [
+                            {
+                                "activity": "ForEachYear",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "DelimitedTextSource",
+                                "additionalColumns": [
+                                    {
+                                        "name": "new",
+                                        "value": {
+                                            "value": "@concat('{\n  \"last_updated_date\": \"', variables('current_timestamp'), '\" \n}')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ],
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "DelimitedTextSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSWriteSettings"
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextWriteSettings",
+                                    "quoteAllText": true,
+                                    "fileExtension": ".txt"
+                                }
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "value": "@json('{\n                                    \"type\": \"TabularTranslator\",\n                                    \"mappings\": [\n                                        {\n                                            \"source\": {\n                                                \"name\": \"new\",\n                                                \"type\": \"String\"\n                                            },\n                                            \"sink\": {\n                                                \"type\": \"String\",\n                                                \"physicalType\": \"String\",\n                                                \"ordinal\": 1\n                                            }\n                                        }\n                                    ],\n                                    \"typeConversion\": true,\n                                    \"typeConversionSettings\": {\n                                        \"allowDataTruncation\": true,\n                                        \"treatBooleanAsNumber\": false\n                                    }\n                                }')",
+                                "type": "Expression"
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "ds_sadataplatfnadara_csv_scada_getjson1",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev"
+                                }
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "ds_sadataplatfnadara_csv_scada_updatejson1",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": {
+                                        "value": "@concat(split(pipeline().parameters.TableToCopy, '.')[1], '/last_update_date.json')",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "name": "SetCurrentTimestamp",
+                        "type": "SetVariable",
+                        "dependsOn": [],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "current_timestamp",
+                            "value": {
+                                "value": "@formatDateTime(utcnow(), 'yyyy-MM-ddTHH:mm:ssZ')",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "InsertIntoSnowflake",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [
+                            {
+                                "activity": "SetWatermark",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            },
+                            {
+                                "activity": "SetListOfFiles",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "ingest_to_snowflake",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true,
+                            "parameters": {
+                                "tableNameADLS": {
+                                    "value": "@split(pipeline().parameters.TableToCopy, '.')[1]",
+                                    "type": "Expression"
+                                },
+                                "tableNameSnowflake": {
+                                    "value": "@pipeline().parameters.FinalName",
+                                    "type": "Expression"
+                                },
+                                "filesToLoad": {
+                                    "value": "@variables('fileNames')",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "SetListOfFiles",
+                        "type": "Copy",
+                        "dependsOn": [
+                            {
+                                "activity": "ForEachYear",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.00:10:00",
+                            "retry": 2,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "DelimitedTextSource",
+                                "additionalColumns": [
+                                    {
+                                        "name": "new",
+                                        "value": {
+                                            "value": "@join(variables('fileNames'),',')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ],
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "DelimitedTextSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSWriteSettings"
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextWriteSettings",
+                                    "quoteAllText": true,
+                                    "fileExtension": ".txt"
+                                }
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "value": "@json('{\n                                    \"type\": \"TabularTranslator\",\n                                    \"mappings\": [\n                                        {\n                                            \"source\": {\n                                                \"name\": \"new\",\n                                                \"type\": \"String\"\n                                            },\n                                            \"sink\": {\n                                                \"type\": \"String\",\n                                                \"physicalType\": \"String\",\n                                                \"ordinal\": 1\n                                            }\n                                        }\n                                    ],\n                                    \"typeConversion\": true,\n                                    \"typeConversionSettings\": {\n                                        \"allowDataTruncation\": true,\n                                        \"treatBooleanAsNumber\": false\n                                    }\n                                }')",
+                                "type": "Expression"
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "ds_sadataplatfnadara_csv_scada_getjson1",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev"
+                                }
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "ds_sadataplatfnadara_csv_scada_updatejson1",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": {
+                                        "value": "@concat(split(pipeline().parameters.TableToCopy, '.')[1], '/list_of_files.txt')",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "TableToCopy": {
+                        "type": "string"
+                    },
+                    "FinalName": {
+                        "type": "string"
+                    }
+                },
+                "variables": {
+                    "year": {
+                        "type": "String"
+                    },
+                    "current_timestamp": {
+                        "type": "String"
+                    },
+                    "fileNames": {
+                        "type": "Array"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-07T16:58:25Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/ds_postgresql_scada1')]",
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_csv_scada_getjson1')]",
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_csv_scada_updatejson1')]",
+                "[concat(variables('factoryId'), '/pipelines/ingest_to_snowflake')]",
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_parquet_scada1')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ingest_incremental_data')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "ForEachYear",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "SetCurrentTimestamp",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            },
+                            {
+                                "activity": "GetYear",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('GetYear').output.value",
+                                "type": "Expression"
+                            },
+                            "isSequential": true,
+                            "activities": [
+                                {
+                                    "name": "GetIncrementalData",
+                                    "type": "Copy",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "SetFileName",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "policy": {
+                                        "timeout": "0.12:00:00",
+                                        "retry": 0,
+                                        "retryIntervalInSeconds": 30,
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "source": {
+                                            "type": "PostgreSqlV2Source",
+                                            "query": {
+                                                "value": "@concat('select * from ', pipeline().parameters.TableToCopy, ' WHERE updated_at > ''', activity('GetOldWatermark').output.firstRow.last_updated_date, ''' AND extract( YEAR from updated_at) = ''', variables('year'), ''' ')\n\n",
+                                                "type": "Expression"
+                                            }
+                                        },
+                                        "sink": {
+                                            "type": "ParquetSink",
+                                            "storeSettings": {
+                                                "type": "AzureBlobFSWriteSettings"
+                                            },
+                                            "formatSettings": {
+                                                "type": "ParquetWriteSettings"
+                                            }
+                                        },
+                                        "enableStaging": false,
+                                        "translator": {
+                                            "type": "TabularTranslator",
+                                            "typeConversion": true,
+                                            "typeConversionSettings": {
+                                                "allowDataTruncation": true,
+                                                "treatBooleanAsNumber": false
+                                            }
+                                        }
+                                    },
+                                    "inputs": [
+                                        {
+                                            "referenceName": "ds_postgresql_scada2",
+                                            "type": "DatasetReference",
+                                            "parameters": {
+                                                "schema": {
+                                                    "value": "@split(pipeline().parameters.TableToCopy, '.')[0]",
+                                                    "type": "Expression"
+                                                },
+                                                "tableName": {
+                                                    "value": "@split(pipeline().parameters.TableToCopy, '.')[1]",
+                                                    "type": "Expression"
+                                                }
+                                            }
+                                        }
+                                    ],
+                                    "outputs": [
+                                        {
+                                            "referenceName": "ds_sadataplatfnadara_parquet_scada2",
+                                            "type": "DatasetReference",
+                                            "parameters": {
+                                                "env": "dev",
+                                                "tableName": {
+                                                    "value": "@split(pipeline().parameters.TableToCopy, '.')[1]",
+                                                    "type": "Expression"
+                                                },
+                                                "fileName": {
+                                                    "value": "@variables('fileName')",
+                                                    "type": "Expression"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    "name": "SetYear",
+                                    "type": "SetVariable",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "variableName": "year",
+                                        "value": {
+                                            "value": "@string(item().extract)",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "SetFileName",
+                                    "type": "SetVariable",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "SetYear",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "policy": {
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "variableName": "fileName",
+                                        "value": {
+                                            "value": "@concat('year=', variables('year'), '/data-', variables('current_timestamp'), '.parquet')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "GetYear",
+                        "type": "Lookup",
+                        "dependsOn": [
+                            {
+                                "activity": "GetOldWatermark",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "PostgreSqlV2Source",
+                                "query": {
+                                    "value": "@concat(\n  'SELECT DISTINCT EXTRACT(YEAR FROM updated_at) FROM ', \n  pipeline().parameters.TableToCopy, ' WHERE updated_at > ''',activity('GetOldWatermark').output.firstRow.last_updated_date, ''' ')",
+                                    "type": "Expression"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_postgresql_scada2",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "schema": {
+                                        "value": "@split(pipeline().parameters.TableToCopy, '.')[0]",
+                                        "type": "Expression"
+                                    },
+                                    "tableName": {
+                                        "value": "@split(pipeline().parameters.TableToCopy, '.')[1]",
+                                        "type": "Expression"
+                                    }
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "GetOldWatermark",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_sadataplatfnadara_json_scada2",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": {
+                                        "value": "@concat(split(pipeline().parameters.TableToCopy, '.')[1], '/last_update_date.json')",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "UpdateNewWatermark",
+                        "type": "Copy",
+                        "dependsOn": [
+                            {
+                                "activity": "ForEachYear",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "DelimitedTextSource",
+                                "additionalColumns": [
+                                    {
+                                        "name": "new",
+                                        "value": {
+                                            "value": "@concat('{\n  \"last_updated_date\": \"', variables('current_timestamp'), '\" \n}')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ],
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "DelimitedTextSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSWriteSettings"
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextWriteSettings",
+                                    "quoteAllText": true,
+                                    "fileExtension": ".txt"
+                                }
+                            },
+                            "enableStaging": false,
+                            "translator": {
+                                "value": "@json('{\n                                    \"type\": \"TabularTranslator\",\n                                    \"mappings\": [\n                                        {\n                                            \"source\": {\n                                                \"name\": \"new\",\n                                                \"type\": \"String\"\n                                            },\n                                            \"sink\": {\n                                                \"type\": \"String\",\n                                                \"physicalType\": \"String\",\n                                                \"ordinal\": 1\n                                            }\n                                        }\n                                    ],\n                                    \"typeConversion\": true,\n                                    \"typeConversionSettings\": {\n                                        \"allowDataTruncation\": true,\n                                        \"treatBooleanAsNumber\": false\n                                    }\n                                }')",
+                                "type": "Expression"
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "ds_sadataplatfnadara_csv_scada_getjson2",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev"
+                                }
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "ds_sadataplatfnadara_csv_scada_updatejson2",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": {
+                                        "value": "@concat(split(pipeline().parameters.TableToCopy, '.')[1], '/last_update_date.json')",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "name": "SetCurrentTimestamp",
+                        "type": "SetVariable",
+                        "dependsOn": [],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "current_timestamp",
+                            "value": {
+                                "value": "@formatDateTime(utcnow(), 'yyyy-MM-ddTHH:mm:ssZ')",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "IngestSnowflake",
+                        "type": "ExecutePipeline",
+                        "dependsOn": [
+                            {
+                                "activity": "ForEachYear",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "pipeline": {
+                                "referenceName": "ingest_to_snowflake",
+                                "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true,
+                            "parameters": {
+                                "tableNameADLS": {
+                                    "value": "@split(pipeline().parameters.TableToCopy, '.')[1]",
+                                    "type": "Expression"
+                                },
+                                "tableNameSnowflake": {
+                                    "value": "@pipeline().parameters.tableNameSnowflake",
+                                    "type": "Expression"
+                                },
+                                "fileADLS": {
+                                    "value": "@variables('fileName')",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "TableToCopy": {
+                        "type": "string"
+                    },
+                    "tableNameSnowflake": {
+                        "type": "string"
+                    }
+                },
+                "variables": {
+                    "year": {
+                        "type": "String"
+                    },
+                    "current_timestamp": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-07T16:58:25Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/ds_postgresql_scada2')]",
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_json_scada2')]",
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_csv_scada_getjson2')]",
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_csv_scada_updatejson2')]",
+                "[concat(variables('factoryId'), '/pipelines/ingest_to_snowflake')]",
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_parquet_scada2')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ingest_to_snowflake')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "CopyDataSnowflake",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.00:10:00",
+                            "retry": 2,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "ParquetSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "fileListPath": {
+                                        "value": "dls-dev/scada/config/@{pipeline().parameters.tableNameADLS}/list_of_files.txt",
+                                        "type": "Expression"
+                                    },
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "ParquetReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "SnowflakeV2Sink",
+                                "importSettings": {
+                                    "type": "SnowflakeImportCopyCommand",
+                                    "storageIntegration": "AZURE_INTEGRATION"
+                                }
+                            },
+                            "enableStaging": true,
+                            "stagingSettings": {
+                                "linkedServiceName": {
+                                    "referenceName": "AzureBlobStorage1",
+                                    "type": "LinkedServiceReference"
+                                },
+                                "path": "dls-dev/scada/bronze"
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "ds_sadataplatfnadara_parquet_list_of_files",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "tableName": "@pipeline().parameters.tableNameADLS"
+                                }
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "ds_snowflake",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "schemaName": {
+                                        "value": "@pipeline().parameters.schema",
+                                        "type": "Expression"
+                                    },
+                                    "tableName": {
+                                        "value": "@toUpper(pipeline().parameters.tableNameSnowflake)",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "db": {
+                        "type": "string",
+                        "defaultValue": "DP_DEV"
+                    },
+                    "schema": {
+                        "type": "string",
+                        "defaultValue": "RAW"
+                    },
+                    "tableNameADLS": {
+                        "type": "string",
+                        "defaultValue": "meter_config"
+                    },
+                    "tableNameSnowflake": {
+                        "type": "string",
+                        "defaultValue": "METERING_METER_CONFIG"
+                    },
+                    "fileADLS": {
+                        "type": "string"
+                    },
+                    "filesToLoad": {
+                        "type": "array"
+                    }
+                },
+                "variables": {
+                    "TESTE": {
+                        "type": "String"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-04T13:55:40Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_parquet_list_of_files')]",
+                "[concat(variables('factoryId'), '/datasets/ds_snowflake')]",
+                "[concat(variables('factoryId'), '/linkedServices/AzureBlobStorage1')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/load_date')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "ForEachTableToMerge",
+                        "type": "ForEach",
+                        "state": "Inactive",
+                        "onInactiveMarkAs": "Succeeded",
+                        "dependsOn": [
+                            {
+                                "activity": "FilterMerge",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('FilterMerge').output.Value",
+                                "type": "Expression"
+                            },
+                            "isSequential": false,
+                            "activities": [
+                                {
+                                    "name": "ExecuteIngestIncrementalData",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "ingest_incremental_data",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": true,
+                                        "parameters": {
+                                            "TableToCopy": {
+                                                "value": "@item().tableToCopy",
+                                                "type": "Expression"
+                                            },
+                                            "tableNameSnowflake": {
+                                                "value": "@item().finalName",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "GetTablesToLoad",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_sadataplatfnadara_json_scada2",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": "config.json"
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "FilterMerge",
+                        "type": "Filter",
+                        "dependsOn": [
+                            {
+                                "activity": "GetTablesToLoad",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('GetTablesToLoad').output.value",
+                                "type": "Expression"
+                            },
+                            "condition": {
+                                "value": "@equals(item().loadMethod, 'merge' )",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "ForEachTableToOverwrite",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "FilterOverwrite",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('FilterOverwrite').output.Value",
+                                "type": "Expression"
+                            },
+                            "isSequential": false,
+                            "activities": [
+                                {
+                                    "name": "ExecuteIngestFullHistory",
+                                    "description": "Execute the ingest_full_history pipeline",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "ingest_full_history",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": true,
+                                        "parameters": {
+                                            "TableToCopy": {
+                                                "value": "@item().tableToCopy",
+                                                "type": "Expression"
+                                            },
+                                            "FinalName": {
+                                                "value": "@item().finalName",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "FilterOverwrite",
+                        "type": "Filter",
+                        "dependsOn": [
+                            {
+                                "activity": "GetTablesToLoad",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('GetTablesToLoad').output.value",
+                                "type": "Expression"
+                            },
+                            "condition": {
+                                "value": "@and(equals(item().loadMethod, 'overwrite' ),equals(item().tableToCopy, 'data_lake.market_em_fixing_report' ))",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "TablesToCopy": {
+                        "type": "array",
+                        "defaultValue": [
+                            "data_lake.asset_config"
+                        ]
+                    }
+                },
+                "variables": {
+                    "tablesToCopy": {
+                        "type": "Array"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-04T14:02:08Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_json_scada2')]",
+                "[concat(variables('factoryId'), '/pipelines/ingest_incremental_data')]",
+                "[concat(variables('factoryId'), '/pipelines/ingest_full_history')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/pipeline1')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "GetInfo",
+                        "type": "GetMetadata",
+                        "state": "Inactive",
+                        "onInactiveMarkAs": "Succeeded",
+                        "dependsOn": [
+                            {
+                                "activity": "Lookup1",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.00:10:00",
+                            "retry": 1,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "dataset": {
+                                "referenceName": "ds_sadataplatfnadara_csv_wind_turbines",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": {
+                                        "value": "dev",
+                                        "type": "Expression"
+                                    },
+                                    "fileName": {
+                                        "value": "@pipeline().parameters.trgFileName",
+                                        "type": "Expression"
+                                    }
+                                }
+                            },
+                            "fieldList": [
+                                "structure"
+                            ],
+                            "storeSettings": {
+                                "type": "AzureBlobFSReadSettings",
+                                "recursive": true,
+                                "enablePartitionDiscovery": false
+                            },
+                            "formatSettings": {
+                                "type": "DelimitedTextReadSettings"
+                            }
+                        }
+                    },
+                    {
+                        "name": "Copy data1",
+                        "type": "Copy",
+                        "dependsOn": [
+                            {
+                                "activity": "GetInfo",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            },
+                            {
+                                "activity": "Set-date",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "DelimitedTextSource",
+                                "additionalColumns": [
+                                    {
+                                        "name": "DATE",
+                                        "value": {
+                                            "value": "@variables('date')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ],
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextReadSettings"
+                                }
+                            },
+                            "sink": {
+                                "type": "SnowflakeV2Sink",
+                                "importSettings": {
+                                    "type": "SnowflakeImportCopyCommand",
+                                    "storageIntegration": "AZURE_INTEGRATION"
+                                }
+                            },
+                            "enableStaging": true,
+                            "stagingSettings": {
+                                "linkedServiceName": {
+                                    "referenceName": "AzureBlobStorage1",
+                                    "type": "LinkedServiceReference"
+                                },
+                                "path": "dls-dev/scada/bronze"
+                            },
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "mappings": [
+                                    {
+                                        "source": {
+                                            "name": "DATE",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "DATE",
+                                            "type": "DateTime"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Zona_id / Aerogeradores",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "ZONE_ID",
+                                            "type": "String"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Área Total  m²",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "TOTAL_AREA_SQM",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Comprimento m",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "LENGTH_M",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Nivel de Intervenção",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "INTERVENTION_LEVEL",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Média",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "AVERAGE",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "Total Pixeis",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "TOTAL_PIXELS",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "C1 | Solo Nú Classe 1 %",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "C1_SOIL_CLASS_1_PCT",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "C1 | Solo Nú Área  m²",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "C1_SOIL_AREA_SQM",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "C2 | Hebáceas Classe 2 %",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "C2_HERBACEOUS_CLASS_2_PCT",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "C2 | Hebáceas Área  m²",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "C2_HERBACEOUS_AREA_SQM",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "C3 | Arbustos e Arvores de pequeno porte Classe 3 % ",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "C3_SHRUBS_TREES_SMALL_CLASS_3_PCT",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "C3 | Arbustos e Arvores de pequeno porte Área  m²",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "C3_SHRUBS_TREES_SMALL_AREA_SQM",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "C4 | Árvores Classe 4 %",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "C4_TREES_CLASS_4_PCT",
+                                            "type": "Int64"
+                                        }
+                                    },
+                                    {
+                                        "source": {
+                                            "name": "C4 | Árvores Área  m²",
+                                            "type": "String"
+                                        },
+                                        "sink": {
+                                            "name": "C4_TREES_AREA_SQM",
+                                            "type": "Int64"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "ds_sadataplatfnadara_csv_wind_turbines",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": {
+                                        "value": "@pipeline().globalParameters.environment",
+                                        "type": "Expression"
+                                    },
+                                    "fileName": {
+                                        "value": "@pipeline().parameters.trgFileName",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "ds_snowflake",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "schemaName": {
+                                        "value": "RAW",
+                                        "type": "Expression"
+                                    },
+                                    "tableName": "WIND_TURBINE_STAT"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Set-date",
+                        "type": "SetVariable",
+                        "dependsOn": [],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "date",
+                            "value": {
+                                "value": "@concat(\n   substring(split(last(split(pipeline().parameters.trgFileName, '_')), '.')[0], 4, 4), '-', \n   substring(split(last(split(pipeline().parameters.trgFileName, '_')), '.')[0], 2, 2), '-', \n   substring(split(last(split(pipeline().parameters.trgFileName, '_')), '.')[0], 0, 2)\n)\n",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "Lookup1",
+                        "type": "Lookup",
+                        "state": "Inactive",
+                        "onInactiveMarkAs": "Succeeded",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "SnowflakeV2Source",
+                                "exportSettings": {
+                                    "type": "SnowflakeExportCopyCommand"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_snowflake",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "schemaName": "RAW",
+                                    "tableName": "WIND_TURBINE_STAT"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "Script1",
+                        "type": "Script",
+                        "state": "Inactive",
+                        "onInactiveMarkAs": "Succeeded",
+                        "dependsOn": [
+                            {
+                                "activity": "GetInfo",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "linkedServiceName": {
+                            "referenceName": "ls_snowflake_dev",
+                            "type": "LinkedServiceReference"
+                        },
+                        "typeProperties": {
+                            "scripts": [
+                                {
+                                    "type": "Query",
+                                    "text": "INSERT INTO DP_DEV.RAW.wind_turbine_stat (\n    date, \n    zone_id, \n    total_area_sqm, \n    length_m, \n    intervention_level, \n    average, \n    total_pixels, \n    c1_soil_class_1_pct, \n    c1_soil_area_sqm, \n    c2_herbaceous_class_2_pct, \n    c2_herbaceous_area_sqm, \n    c3_shrubs_trees_small_class_3_pct, \n    c3_shrubs_trees_small_area_sqm, \n    c4_trees_class_4_pct, \n    c4_trees_area_sqm\n) \nVALUES (\n    '2025-04-04',          -- date\n    'Z01',                 -- zone_id\n    10000.00,              -- total_area_sqm\n    120.50,                -- length_m\n    2,                     -- intervention_level\n    75.50,                 -- average\n    1500,                  -- total_pixels\n    10.50,                 -- c1_soil_class_1_pct\n    500.00,                -- c1_soil_area_sqm\n    20.30,                 -- c2_herbaceous_class_2_pct\n    1000.00,               -- c2_herbaceous_area_sqm\n    15.00,                 -- c3_shrubs_trees_small_class_3_pct\n    750.00,                -- c3_shrubs_trees_small_area_sqm\n    25.00,                 -- c4_trees_class_4_pct\n    1250.00\n);\n"
+                                }
+                            ],
+                            "scriptBlockExecutionTimeout": "02:00:00"
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "trgFileName": {
+                        "type": "string",
+                        "defaultValue": "nadara_wind_turbine_stats_22102024.csv"
+                    }
+                },
+                "variables": {
+                    "date": {
+                        "type": "String"
+                    }
+                },
+                "folder": {
+                    "name": "satellite_vegetation"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-04T16:14:57Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/ds_sadataplatfnadara_csv_wind_turbines')]",
+                "[concat(variables('factoryId'), '/datasets/ds_snowflake')]",
+                "[concat(variables('factoryId'), '/linkedServices/ls_snowflake_dev')]",
+                "[concat(variables('factoryId'), '/linkedServices/AzureBlobStorage1')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/pipeline1_copy1')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Set-date",
+                        "type": "SetVariable",
+                        "dependsOn": [],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "date",
+                            "value": {
+                                "value": "@formatDateTime(concat('20', substring(split(last(split(pipeline().parameters.trgFileName, '_')), '.')[0], 5, 4), '-', substring(split(last(split(pipeline().parameters.trgFileName, '_')), '.')[0], 3, 2), '-', substring(split(last(split(pipeline().parameters.trgFileName, '_')), '.')[0], 1, 2)), 'yyyy-MM-dd')\r\n",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "Lookup1",
+                        "type": "Lookup",
+                        "state": "Inactive",
+                        "onInactiveMarkAs": "Succeeded",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "SnowflakeV2Source",
+                                "exportSettings": {
+                                    "type": "SnowflakeExportCopyCommand"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_snowflake",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "schemaName": "RAW",
+                                    "tableName": "WIND_TURBINE_STAT"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "Script1",
+                        "type": "Script",
+                        "state": "Inactive",
+                        "onInactiveMarkAs": "Succeeded",
+                        "dependsOn": [
+                            {
+                                "activity": "Set-date",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "linkedServiceName": {
+                            "referenceName": "ls_snowflake_dev",
+                            "type": "LinkedServiceReference"
+                        },
+                        "typeProperties": {
+                            "scripts": [
+                                {
+                                    "type": "Query",
+                                    "text": {
+                                        "value": "USE DATABASE DP_DEV;\nUSE SCHEMA RAW;\n\ncreate or replace WIND_TURBINE_STAT\n using template (\n select array_agg(object_construct(*))\n from table(\n infer_schema(\n location=>'@WIND_TURBINE_STAT',\n file_format=>'csv_ff'\n )\n ));",
+                                        "type": "Expression"
+                                    }
+                                }
+                            ],
+                            "scriptBlockExecutionTimeout": "02:00:00"
+                        }
+                    },
+                    {
+                        "name": "Copy-Into-Snowflake-SAS",
+                        "type": "Script",
+                        "state": "Inactive",
+                        "onInactiveMarkAs": "Succeeded",
+                        "dependsOn": [
+                            {
+                                "activity": "Script1",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "linkedServiceName": {
+                            "referenceName": "ls_snowflake_dev",
+                            "type": "LinkedServiceReference"
+                        },
+                        "typeProperties": {
+                            "scripts": [
+                                {
+                                    "type": "Query",
+                                    "text": {
+                                        "value": "USE DATABASE @{pipeline().parameters.db};\nUSE SCHEMA @{pipeline().parameters.schema};\n\nCOPY INTO @{pipeline().parameters.tableName}\nFROM 'azure://sadataplatfnadara.blob.core.windows.net/dls-dev/satellite/bronze/'\nCREDENTIALS = (AZURE_SAS_TOKEN = '@{pipeline().parameters.sasToken}')\nFILE_FORMAT = (TYPE = CSV \n               FIELD_OPTIONALLY_ENCLOSED_BY = '\"' \n               SKIP_HEADER = 1 \n               FIELD_DELIMITER = ',')\nON_ERROR = 'CONTINUE';",
+                                        "type": "Expression"
+                                    }
+                                }
+                            ],
+                            "scriptBlockExecutionTimeout": "02:00:00"
+                        }
+                    },
+                    {
+                        "name": "Copy-Into-Snowflake",
+                        "type": "Script",
+                        "dependsOn": [
+                            {
+                                "activity": "Script1",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "linkedServiceName": {
+                            "referenceName": "ls_snowflake_dev",
+                            "type": "LinkedServiceReference"
+                        },
+                        "typeProperties": {
+                            "scripts": [
+                                {
+                                    "type": "NonQuery",
+                                    "text": {
+                                        "value": "USE DATABASE @{pipeline().parameters.db};\nUSE SCHEMA @{pipeline().parameters.schema};\n\nCOPY INTO @{pipeline().parameters.tableName}\nFROM (SELECT @{variables('date')}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14 FROM @SATELLITE_AZURE_STAGE)\nFILE_FORMAT = (TYPE = CSV \n               FIELD_OPTIONALLY_ENCLOSED_BY = '\"' \n               SKIP_HEADER = 1 \n               FIELD_DELIMITER = ',')\nON_ERROR = 'CONTINUE'\n--VALIDATION_MODE = RETURN_ALL_ERRORS;",
+                                        "type": "Expression"
+                                    }
+                                }
+                            ],
+                            "scriptBlockExecutionTimeout": "02:00:00"
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "trgFileName": {
+                        "type": "string",
+                        "defaultValue": "nadara_wind_turbine_stats_22102024.csv"
+                    },
+                    "db": {
+                        "type": "string",
+                        "defaultValue": "DP_DEV"
+                    },
+                    "schema": {
+                        "type": "string",
+                        "defaultValue": "RAW"
+                    },
+                    "tableName": {
+                        "type": "string",
+                        "defaultValue": "WIND_TURBINE_STAT"
+                    },
+                    "sasToken": {
+                        "type": "string",
+                        "defaultValue": "sv=2024-11-04&ss=bfqt&srt=sco&sp=rwdlacupyx&se=2025-05-07T22:43:00Z&st=2025-04-07T14:43:00Z&spr=https&sig=JXsSxeEqO3JTMW1sFmtDztQxx1lFaw%2BGq%2Bn0lkbZEVg%3D"
+                    }
+                },
+                "variables": {
+                    "date": {
+                        "type": "String"
+                    }
+                },
+                "folder": {
+                    "name": "satellite_vegetation"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-08T11:22:41Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/ds_snowflake')]",
+                "[concat(variables('factoryId'), '/linkedServices/ls_snowflake_dev')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/DestinationDataset_iz3')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "AzureBlobStorage1",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Binary",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "folderPath": "satellite/bronze",
+                        "container": "dls-dev"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/AzureBlobStorage1')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/SourceDataset_iz3')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "AzureBlobStorage1",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Binary",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "fileName": "nadara_transmission_line_stats_22102024.csv",
+                        "folderPath": "satellite",
+                        "container": "dls-landing"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/AzureBlobStorage1')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_postgresql_scada')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_dev_postgresql",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "schema": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "PostgreSqlV2Table",
+                "schema": [],
+                "typeProperties": {
+                    "schema": {
+                        "value": "@dataset().schema",
+                        "type": "Expression"
+                    },
+                    "table": {
+                        "value": "@dataset().tableName",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_dev_postgresql')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_postgresql_scada1')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_dev_postgresql",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "schema": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "PostgreSqlV2Table",
+                "schema": [],
+                "typeProperties": {
+                    "schema": {
+                        "value": "@dataset().schema",
+                        "type": "Expression"
+                    },
+                    "table": {
+                        "value": "@dataset().tableName",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_dev_postgresql')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_postgresql_scada2')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_dev_postgresql",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "schema": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "PostgreSqlV2Table",
+                "schema": [],
+                "typeProperties": {
+                    "schema": {
+                        "value": "@dataset().schema",
+                        "type": "Expression"
+                    },
+                    "table": {
+                        "value": "@dataset().tableName",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_dev_postgresql')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_postgresql_scada3')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_dev_postgresql",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "schema": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "PostgreSqlV2Table",
+                "schema": [],
+                "typeProperties": {
+                    "schema": {
+                        "value": "@dataset().schema",
+                        "type": "Expression"
+                    },
+                    "table": {
+                        "value": "@dataset().tableName",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_dev_postgresql')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": "teste.csv",
+                        "folderPath": {
+                            "value": "@concat('scada/bronze/', dataset().tableName)",
+                            "type": "Expression"
+                        },
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": true,
+                    "quoteChar": "\""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada_getjson')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": "dummy.csv",
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": false,
+                    "quoteChar": "\""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada_getjson1')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": "dummy.csv",
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": false,
+                    "quoteChar": "\""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada_getjson2')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": "dummy.csv",
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": false,
+                    "quoteChar": "\""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada_getjson3')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": "dummy.csv",
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": false,
+                    "quoteChar": "\""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada_updatejson')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "",
+                    "firstRowAsHeader": false,
+                    "quoteChar": ""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada_updatejson1')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "",
+                    "firstRowAsHeader": false,
+                    "quoteChar": ""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada_updatejson2')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "",
+                    "firstRowAsHeader": false,
+                    "quoteChar": ""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_scada_updatejson3')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "",
+                    "firstRowAsHeader": false,
+                    "quoteChar": ""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_csv_wind_turbines')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "string"
+                    },
+                    "fileName": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "satellite/bronze",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": true,
+                    "quoteChar": "\""
+                },
+                "schema": [
+                    {
+                        "name": "Zona_id / Aerogeradores",
+                        "type": "String"
+                    },
+                    {
+                        "name": "Área Total  m²",
+                        "type": "String"
+                    },
+                    {
+                        "name": "Comprimento m",
+                        "type": "String"
+                    },
+                    {
+                        "name": "Nivel de Intervenção",
+                        "type": "String"
+                    },
+                    {
+                        "name": "Média",
+                        "type": "String"
+                    },
+                    {
+                        "name": "Total Pixeis",
+                        "type": "String"
+                    },
+                    {
+                        "name": "C1 | Solo Nú Classe 1 %",
+                        "type": "String"
+                    },
+                    {
+                        "name": "C1 | Solo Nú Área  m²",
+                        "type": "String"
+                    },
+                    {
+                        "name": "C2 | Hebáceas Classe 2 %",
+                        "type": "String"
+                    },
+                    {
+                        "name": "C2 | Hebáceas Área  m²",
+                        "type": "String"
+                    },
+                    {
+                        "name": "C3 | Arbustos e Arvores de pequeno porte Classe 3 % ",
+                        "type": "String"
+                    },
+                    {
+                        "name": "C3 | Arbustos e Arvores de pequeno porte Área  m²",
+                        "type": "String"
+                    },
+                    {
+                        "name": "C4 | Árvores Classe 4 %",
+                        "type": "String"
+                    },
+                    {
+                        "name": "C4 | Árvores Área  m²",
+                        "type": "String"
+                    }
+                ]
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_json_scada')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "schema": {}
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_json_scada1')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "schema": {}
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_json_scada2')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "schema": {}
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_json_scada3')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": "scada/config",
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "schema": {}
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_parquet_list_of_files')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "folderPath": {
+                            "value": "@concat('scada/bronze/', dataset().tableName)",
+                            "type": "Expression"
+                        },
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_parquet_scada')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": {
+                            "value": "@concat('scada/bronze/', dataset().tableName)",
+                            "type": "Expression"
+                        },
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_parquet_scada1')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": {
+                            "value": "@concat('scada/bronze/', dataset().tableName)",
+                            "type": "Expression"
+                        },
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_parquet_scada2')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": {
+                            "value": "@concat('scada/bronze/', dataset().tableName)",
+                            "type": "Expression"
+                        },
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_sadataplatfnadara_parquet_scada3')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_sadataplatfnadara",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "env": {
+                        "type": "String"
+                    },
+                    "tableName": {
+                        "type": "String"
+                    },
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": [],
+                "type": "Parquet",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": {
+                            "value": "@concat('scada/bronze/', dataset().tableName)",
+                            "type": "Expression"
+                        },
+                        "fileSystem": {
+                            "value": "dls-@{dataset().env}",
+                            "type": "Expression"
+                        }
+                    },
+                    "compressionCodec": "snappy"
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_sadataplatfnadara')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ds_snowflake')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "ls_snowflake_dev",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "schemaName": {
+                        "type": "string"
+                    },
+                    "tableName": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "SnowflakeV2Table",
+                "schema": [],
+                "typeProperties": {
+                    "schema": {
+                        "value": "@dataset().schemaName",
+                        "type": "Expression"
+                    },
+                    "table": {
+                        "value": "@dataset().tableName",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/ls_snowflake_dev')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/AzureBlobStorage1')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "AzureBlobStorage",
+                "typeProperties": {
+                    "connectionString": "[parameters('AzureBlobStorage1_connectionString')]"
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/Nadara_Snowflake_Dev')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "description": "Nadara's data platform on snowflake dev environment",
+                "annotations": [],
+                "type": "SnowflakeV2",
+                "typeProperties": {
+                    "authenticationType": "Basic",
+                    "accountIdentifier": "A6149388652471-NADARADATAPLATFORM",
+                    "user": "DP_ELT_DEV",
+                    "database": "[parameters('Nadara_Snowflake_Dev_properties_typeProperties_database')]",
+                    "warehouse": "DP_DEV_ELT_XS",
+                    "password": {
+                        "type": "SecureString",
+                        "value": "[parameters('Nadara_Snowflake_Dev_password')]"
+                    }
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/df-ls-keyvault')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "AzureKeyVault",
+                "typeProperties": {
+                    "baseUrl": "[parameters('df-ls-keyvault_properties_typeProperties_baseUrl')]"
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ls_blobstorage')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "AzureBlobStorage",
+                "typeProperties": {
+                    "sasUri": "[parameters('ls_blobstorage_sasUri')]"
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ls_dev_postgresql')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "PostgreSqlV2",
+                "typeProperties": {
+                    "server": "[parameters('ls_dev_postgresql_properties_typeProperties_server')]",
+                    "port": 5432,
+                    "database": "[parameters('ls_dev_postgresql_properties_typeProperties_database')]",
+                    "username": "[parameters('ls_dev_postgresql_properties_typeProperties_username')]",
+                    "password": {
+                        "type": "AzureKeyVaultSecret",
+                        "store": {
+                            "referenceName": "df-ls-keyvault",
+                            "type": "LinkedServiceReference"
+                        },
+                        "secretName": "key-df-ls-postgresql"
+                    },
+                    "sslMode": 2,
+                    "authenticationType": "Basic"
+                },
+                "connectVia": {
+                    "referenceName": "SHIR",
+                    "type": "IntegrationRuntimeReference"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/integrationRuntimes/SHIR')]",
+                "[concat(variables('factoryId'), '/linkedServices/df-ls-keyvault')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ls_sadataplatfnadara')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "description": "Linked service to access storage account sadataplatfnadara",
+                "annotations": [],
+                "type": "AzureBlobFS",
+                "typeProperties": {
+                    "url": "[parameters('ls_sadataplatfnadara_properties_typeProperties_url')]",
+                    "accountKey": {
+                        "type": "SecureString",
+                        "value": "[parameters('ls_sadataplatfnadara_accountKey')]"
+                    }
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/ls_snowflake_dev')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "SnowflakeV2",
+                "typeProperties": {
+                    "authenticationType": "Basic",
+                    "accountIdentifier": "A6149388652471-NADARADATAPLATFORM",
+                    "user": "DP_ELT_DEV",
+                    "database": "[parameters('ls_snowflake_dev_properties_typeProperties_database')]",
+                    "warehouse": "DP_DEV_ELT_XS",
+                    "role": "[parameters('ls_snowflake_dev_properties_typeProperties_role')]",
+                    "password": {
+                        "type": "AzureKeyVaultSecret",
+                        "store": {
+                            "referenceName": "df-ls-keyvault",
+                            "type": "LinkedServiceReference"
+                        },
+                        "secretName": "DP-ELT-DEV"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/df-ls-keyvault')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/trg_satellite_vegetation_landing')]",
+            "type": "Microsoft.DataFactory/factories/triggers",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "description": "Trigger when a file is added to satellitevegetation folder in dls-landing",
+                "annotations": [],
+                "runtimeState": "Stopped",
+                "pipelines": [
+                    {
+                        "pipelineReference": {
+                            "referenceName": "pipeline1",
+                            "type": "PipelineReference"
+                        },
+                        "parameters": {}
+                    }
+                ],
+                "type": "BlobEventsTrigger",
+                "typeProperties": {
+                    "blobPathBeginsWith": "/dls-landing/blobs/",
+                    "blobPathEndsWith": ".csv",
+                    "ignoreEmptyBlobs": true,
+                    "scope": "[parameters('trg_satellite_vegetation_landing_properties_typeProperties_scope')]",
+                    "events": [
+                        "Microsoft.Storage.BlobCreated"
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/pipelines/pipeline1')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/SHIR')]",
+            "type": "Microsoft.DataFactory/factories/integrationRuntimes",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "type": "SelfHosted",
+                "typeProperties": {}
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/default')]",
+            "type": "Microsoft.DataFactory/factories/globalparameters",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "environment": {
+                    "type": "String",
+                    "value": "[parameters('default_properties_environment_value')]"
+                }
+            },
+            "dependsOn": []
+        }
+    ]
+}

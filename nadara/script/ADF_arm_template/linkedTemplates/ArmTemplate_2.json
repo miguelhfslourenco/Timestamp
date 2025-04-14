@@ -1,0 +1,529 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "type": "string",
+            "metadata": "Data Factory name",
+            "defaultValue": "df-dataplatform-nadara-dev"
+        },
+        "trg_satellite_vegetation_landing_properties_typeProperties_scope": {
+            "type": "string",
+            "defaultValue": "/subscriptions/86093bd5-474b-461b-ac98-eab43df6459b/resourceGroups/rg-dataplatform_extra/providers/Microsoft.Storage/storageAccounts/sadataplatfnadara"
+        }
+    },
+    "variables": {
+        "factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+    },
+    "resources": [
+        {
+            "name": "[concat(parameters('factoryName'), '/trg_satellite_vegetation_landing')]",
+            "type": "Microsoft.DataFactory/factories/triggers",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "description": "Trigger when a file is added to satellitevegetation folder in dls-landing",
+                "annotations": [],
+                "runtimeState": "Stopped",
+                "pipelines": [
+                    {
+                        "pipelineReference": {
+                            "referenceName": "pipeline1",
+                            "type": "PipelineReference"
+                        },
+                        "parameters": {}
+                    }
+                ],
+                "type": "BlobEventsTrigger",
+                "typeProperties": {
+                    "blobPathBeginsWith": "/dls-landing/blobs/",
+                    "blobPathEndsWith": ".csv",
+                    "ignoreEmptyBlobs": true,
+                    "scope": "[parameters('trg_satellite_vegetation_landing_properties_typeProperties_scope')]",
+                    "events": [
+                        "Microsoft.Storage.BlobCreated"
+                    ]
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/full_history_load')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "ForEachTable",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "SetTablesToCopy",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@variables('tablesToCopy')",
+                                "type": "Expression"
+                            },
+                            "isSequential": false,
+                            "batchCount": 5,
+                            "activities": [
+                                {
+                                    "name": "ExecuteTableIngestion",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "ingest_full_history",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": false,
+                                        "parameters": {
+                                            "TableToCopy": {
+                                                "value": "@item()",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "GetTablesToCopy",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_sadataplatfnadara_json_scada1",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": "tablesToCopy.json"
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "SetTablesToCopy",
+                        "type": "SetVariable",
+                        "dependsOn": [
+                            {
+                                "activity": "GetTablesToCopy",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "tablesToCopy",
+                            "value": {
+                                "value": "@if(\n    empty(pipeline().parameters.TablesToCopy),\n    activity('GetTablesToCopy').output.value[0].tablesToCopy,\n    pipeline().parameters.TablesToCopy\n)",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "TablesToCopy": {
+                        "type": "array",
+                        "defaultValue": [
+                            "data_lake.inverter_data"
+                        ]
+                    }
+                },
+                "variables": {
+                    "tablesToCopy": {
+                        "type": "Array"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-07T16:58:25Z"
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/incremental_load')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "ForEachTable",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "SetTablesToCopy",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@variables('tablesToCopy')",
+                                "type": "Expression"
+                            },
+                            "activities": [
+                                {
+                                    "name": "ExecuteIngestIncrementalData",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "ingest_incremental_data",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": true,
+                                        "parameters": {
+                                            "TableToCopy": {
+                                                "value": "@item()",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "GetTablesToCopy",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_sadataplatfnadara_json_scada2",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": "tablesToCopy.json"
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "SetTablesToCopy",
+                        "type": "SetVariable",
+                        "dependsOn": [
+                            {
+                                "activity": "GetTablesToCopy",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "tablesToCopy",
+                            "value": {
+                                "value": "@if(\n    empty(pipeline().parameters.TablesToCopy),\n    activity('GetTablesToCopy').output.value[0].tablesToCopy,\n    pipeline().parameters.TablesToCopy\n)",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "TablesToCopy": {
+                        "type": "array",
+                        "defaultValue": [
+                            "data_lake.asset_config"
+                        ]
+                    }
+                },
+                "variables": {
+                    "tablesToCopy": {
+                        "type": "Array"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-04T14:02:08Z"
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/load_date')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "ForEachTableToMerge",
+                        "type": "ForEach",
+                        "state": "Inactive",
+                        "onInactiveMarkAs": "Succeeded",
+                        "dependsOn": [
+                            {
+                                "activity": "FilterMerge",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('FilterMerge').output.Value",
+                                "type": "Expression"
+                            },
+                            "isSequential": false,
+                            "activities": [
+                                {
+                                    "name": "ExecuteIngestIncrementalData",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "ingest_incremental_data",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": true,
+                                        "parameters": {
+                                            "TableToCopy": {
+                                                "value": "@item().tableToCopy",
+                                                "type": "Expression"
+                                            },
+                                            "tableNameSnowflake": {
+                                                "value": "@item().finalName",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "GetTablesToLoad",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true,
+                                    "enablePartitionDiscovery": false
+                                },
+                                "formatSettings": {
+                                    "type": "JsonReadSettings"
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "ds_sadataplatfnadara_json_scada2",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "env": "dev",
+                                    "fileName": "config.json"
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "FilterMerge",
+                        "type": "Filter",
+                        "dependsOn": [
+                            {
+                                "activity": "GetTablesToLoad",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('GetTablesToLoad').output.value",
+                                "type": "Expression"
+                            },
+                            "condition": {
+                                "value": "@equals(item().loadMethod, 'merge' )",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "ForEachTableToOverwrite",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "FilterOverwrite",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('FilterOverwrite').output.Value",
+                                "type": "Expression"
+                            },
+                            "isSequential": false,
+                            "activities": [
+                                {
+                                    "name": "ExecuteIngestFullHistory",
+                                    "description": "Execute the ingest_full_history pipeline",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "ingest_full_history",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": true,
+                                        "parameters": {
+                                            "TableToCopy": {
+                                                "value": "@item().tableToCopy",
+                                                "type": "Expression"
+                                            },
+                                            "FinalName": {
+                                                "value": "@item().finalName",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "FilterOverwrite",
+                        "type": "Filter",
+                        "dependsOn": [
+                            {
+                                "activity": "GetTablesToLoad",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('GetTablesToLoad').output.value",
+                                "type": "Expression"
+                            },
+                            "condition": {
+                                "value": "@and(equals(item().loadMethod, 'overwrite' ),equals(item().tableToCopy, 'data_lake.market_em_fixing_report' ))",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                    "TablesToCopy": {
+                        "type": "array",
+                        "defaultValue": [
+                            "data_lake.asset_config"
+                        ]
+                    }
+                },
+                "variables": {
+                    "tablesToCopy": {
+                        "type": "Array"
+                    }
+                },
+                "folder": {
+                    "name": "scada"
+                },
+                "annotations": [],
+                "lastPublishTime": "2025-04-04T14:02:08Z"
+            },
+            "dependsOn": []
+        }
+    ]
+}

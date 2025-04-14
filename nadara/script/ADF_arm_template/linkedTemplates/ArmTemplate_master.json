@@ -1,0 +1,180 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "type": "string",
+            "metadata": "Data Factory name",
+            "defaultValue": "df-dataplatform-nadara-dev"
+        },
+        "AzureBlobStorage1_connectionString": {
+            "type": "secureString",
+            "metadata": "Secure string for 'connectionString' of 'AzureBlobStorage1'"
+        },
+        "Nadara_Snowflake_Dev_password": {
+            "type": "secureString",
+            "metadata": "Secure string for 'password' of 'Nadara_Snowflake_Dev'"
+        },
+        "ls_sadataplatfnadara_accountKey": {
+            "type": "secureString",
+            "metadata": "Secure string for 'accountKey' of 'ls_sadataplatfnadara'"
+        },
+        "Nadara_Snowflake_Dev_properties_typeProperties_database": {
+            "type": "string",
+            "defaultValue": "DP_DEV"
+        },
+        "df-ls-keyvault_properties_typeProperties_baseUrl": {
+            "type": "string",
+            "defaultValue": "https://kv-nadara-dev.vault.azure.net/"
+        },
+        "ls_blobstorage_sasUri": {
+            "type": "secureString",
+            "metadata": "Secure string for 'sasUri' of 'ls_blobstorage'"
+        },
+        "ls_dev_postgresql_properties_typeProperties_server": {
+            "type": "string",
+            "defaultValue": "10.100.22.182"
+        },
+        "ls_dev_postgresql_properties_typeProperties_database": {
+            "type": "string",
+            "defaultValue": "hub"
+        },
+        "ls_dev_postgresql_properties_typeProperties_username": {
+            "type": "string",
+            "defaultValue": "timestamp_reader"
+        },
+        "ls_sadataplatfnadara_properties_typeProperties_url": {
+            "type": "string",
+            "defaultValue": "https://sadataplatfnadara.dfs.core.windows.net/"
+        },
+        "ls_snowflake_dev_properties_typeProperties_database": {
+            "type": "string",
+            "defaultValue": "DP_DEV"
+        },
+        "ls_snowflake_dev_properties_typeProperties_role": {
+            "type": "string",
+            "defaultValue": "DP_DEV_ELT_ROLE"
+        },
+        "trg_satellite_vegetation_landing_properties_typeProperties_scope": {
+            "type": "string",
+            "defaultValue": "/subscriptions/86093bd5-474b-461b-ac98-eab43df6459b/resourceGroups/rg-dataplatform_extra/providers/Microsoft.Storage/storageAccounts/sadataplatfnadara"
+        },
+        "default_properties_environment_value": {
+            "type": "string",
+            "defaultValue": "dev"
+        },
+        "containerUri": {
+            "type": "string",
+            "metadata": "URI to storage account containing linked ARM templates"
+        },
+        "containerSasToken": {
+            "type": "string",
+            "metadata": "Sas token to storage account containing linked ARM templates"
+        }
+    },
+    "variables": {
+        "factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+    },
+    "resources": [
+        {
+            "name": "df-dataplatform-nadara-dev_ArmTemplate_0",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2024-03-01",
+            "properties": {
+                "mode": "incremental",
+                "templateLink": {
+                    "uri": "[concat(parameters('containerUri'), '/ArmTemplate_0.json', parameters('containerSasToken'))]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "factoryName": {
+                        "value": "[parameters('factoryName')]"
+                    },
+                    "AzureBlobStorage1_connectionString": {
+                        "value": "[parameters('AzureBlobStorage1_connectionString')]"
+                    },
+                    "Nadara_Snowflake_Dev_password": {
+                        "value": "[parameters('Nadara_Snowflake_Dev_password')]"
+                    },
+                    "ls_sadataplatfnadara_accountKey": {
+                        "value": "[parameters('ls_sadataplatfnadara_accountKey')]"
+                    },
+                    "default_properties_environment_value": {
+                        "value": "[parameters('default_properties_environment_value')]"
+                    },
+                    "Nadara_Snowflake_Dev_properties_typeProperties_database": {
+                        "value": "[parameters('Nadara_Snowflake_Dev_properties_typeProperties_database')]"
+                    },
+                    "df-ls-keyvault_properties_typeProperties_baseUrl": {
+                        "value": "[parameters('df-ls-keyvault_properties_typeProperties_baseUrl')]"
+                    },
+                    "ls_blobstorage_sasUri": {
+                        "value": "[parameters('ls_blobstorage_sasUri')]"
+                    },
+                    "ls_sadataplatfnadara_properties_typeProperties_url": {
+                        "value": "[parameters('ls_sadataplatfnadara_properties_typeProperties_url')]"
+                    }
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "df-dataplatform-nadara-dev_ArmTemplate_1",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2024-03-01",
+            "properties": {
+                "mode": "incremental",
+                "templateLink": {
+                    "uri": "[concat(parameters('containerUri'), '/ArmTemplate_1.json', parameters('containerSasToken'))]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "factoryName": {
+                        "value": "[parameters('factoryName')]"
+                    },
+                    "ls_dev_postgresql_properties_typeProperties_server": {
+                        "value": "[parameters('ls_dev_postgresql_properties_typeProperties_server')]"
+                    },
+                    "ls_dev_postgresql_properties_typeProperties_database": {
+                        "value": "[parameters('ls_dev_postgresql_properties_typeProperties_database')]"
+                    },
+                    "ls_dev_postgresql_properties_typeProperties_username": {
+                        "value": "[parameters('ls_dev_postgresql_properties_typeProperties_username')]"
+                    },
+                    "ls_snowflake_dev_properties_typeProperties_database": {
+                        "value": "[parameters('ls_snowflake_dev_properties_typeProperties_database')]"
+                    },
+                    "ls_snowflake_dev_properties_typeProperties_role": {
+                        "value": "[parameters('ls_snowflake_dev_properties_typeProperties_role')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'df-dataplatform-nadara-dev_ArmTemplate_0')]"
+            ]
+        },
+        {
+            "name": "df-dataplatform-nadara-dev_ArmTemplate_2",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2024-03-01",
+            "properties": {
+                "mode": "incremental",
+                "templateLink": {
+                    "uri": "[concat(parameters('containerUri'), '/ArmTemplate_2.json', parameters('containerSasToken'))]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "factoryName": {
+                        "value": "[parameters('factoryName')]"
+                    },
+                    "trg_satellite_vegetation_landing_properties_typeProperties_scope": {
+                        "value": "[parameters('trg_satellite_vegetation_landing_properties_typeProperties_scope')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'df-dataplatform-nadara-dev_ArmTemplate_1')]"
+            ]
+        }
+    ]
+}
