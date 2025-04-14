@@ -1,0 +1,57 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "value": "df-dataplatform-nadara-dev"
+        },
+        "AzureBlobStorage1_connectionString": {
+            "value": ""
+        },
+        "Nadara_Snowflake_Dev_password": {
+            "value": ""
+        },
+        "ls_sadataplatfnadara_accountKey": {
+            "value": ""
+        },
+        "Nadara_Snowflake_Dev_properties_typeProperties_database": {
+            "value": "DP_DEV"
+        },
+        "df-ls-keyvault_properties_typeProperties_baseUrl": {
+            "value": "https://kv-nadara-dev.vault.azure.net/"
+        },
+        "ls_blobstorage_sasUri": {
+            "value": ""
+        },
+        "ls_dev_postgresql_properties_typeProperties_server": {
+            "value": "10.100.22.182"
+        },
+        "ls_dev_postgresql_properties_typeProperties_database": {
+            "value": "hub"
+        },
+        "ls_dev_postgresql_properties_typeProperties_username": {
+            "value": "timestamp_reader"
+        },
+        "ls_sadataplatfnadara_properties_typeProperties_url": {
+            "value": "https://sadataplatfnadara.dfs.core.windows.net/"
+        },
+        "ls_snowflake_dev_properties_typeProperties_database": {
+            "value": "DP_DEV"
+        },
+        "ls_snowflake_dev_properties_typeProperties_role": {
+            "value": "DP_DEV_ELT_ROLE"
+        },
+        "trg_satellite_vegetation_landing_properties_typeProperties_scope": {
+            "value": "/subscriptions/86093bd5-474b-461b-ac98-eab43df6459b/resourceGroups/rg-dataplatform_extra/providers/Microsoft.Storage/storageAccounts/sadataplatfnadara"
+        },
+        "default_properties_environment_value": {
+            "value": "dev"
+        },
+        "containerUri": {
+            "value": ""
+        },
+        "containerSasToken": {
+            "value": ""
+        }
+    }
+}
