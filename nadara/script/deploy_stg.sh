@@ -111,6 +111,16 @@ az storage fs directory create \
   --file-system dls-landing-stg
   --auth-mode login
 
+# Criar key vault
+az keyvault create \
+  --name kv-nadara-prd \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION \
+  --sku standard \
+  --retention-days 90 \
+  --enable-purge-protection false \
+  --tags Environment=stg $TAGS
+
 # Criar ADF
 az deployment group create \
   --resource-group $RESOURCE_GROUP \
