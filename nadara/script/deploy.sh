@@ -14,13 +14,13 @@ az account set --subscription "$SUBSCRIPTION_ID"
 # Criar RG
 az group create --name $RESOURCE_GROUP --location $LOCATION
 
-# Criar VNET (Pedro)
-az network vnet create \
-  --name $VNET_NAME \
-  --resource-group $RESOURCE_GROUP \
-  --location $LOCATION
-  --address-prefixes 10.100.68.0/22 \
-  --tags Environment=all $TAGS
+# Criar VNET (Pedro) - Vnet foi criada pela equipa de infra da Nadara
+#az network vnet create \
+#  --name $VNET_NAME \
+#  --resource-group $RESOURCE_GROUP \
+#  --location $LOCATION
+#  --address-prefixes 10.100.68.0/22 \
+#  --tags Environment=all $TAGS
 
 # Criar Subnets (Pedro)
 az network vnet subnet create \
@@ -59,15 +59,15 @@ az network vnet subnet create \
   --vnet-name $VNET_NAME \
   --address-prefixes 10.100.70.160/27
 
-# Criar Storage Account (Pedro)
-az storage account create \
-  --name $STORAGE_ACCOUNT \
-  --resource_group $RESOURCE_GROUP \
-  --location $LOCATION \
-  --sku Standard_LRS \
-  --kind StorageV2 \
-  --enable-hierarchical-namespace true
-  --tags Environment=stg $TAGS
+## Criar Storage Account (Pedro) - Criado pela equipa de infra da Nadara, apenas vamos criar os containers
+#az storage account create \
+#  --name $STORAGE_ACCOUNT \
+#  --resource_group $RESOURCE_GROUP \
+#  --location $LOCATION \
+#  --sku Standard_LRS \
+#  --kind StorageV2 \
+#  --enable-hierarchical-namespace true
+#  --tags Environment=stg $TAGS
 
 # Criar Data Lake Filesystems (Pedro)
 az storage fs create \
